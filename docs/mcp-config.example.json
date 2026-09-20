@@ -1,0 +1,7 @@
+{
+  "mcpServers": {
+    "mac-resource-monitor": {
+      "command": "/path/to/mac-resource-monitor/scripts/run-mcp.sh"
+    }
+  }
+}

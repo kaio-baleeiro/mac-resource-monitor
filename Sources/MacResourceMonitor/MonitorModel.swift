@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import MacResourceMonitorCore
 
 @MainActor
 final class MonitorModel: ObservableObject {

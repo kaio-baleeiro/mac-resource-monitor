@@ -2,45 +2,47 @@ import Foundation
 import IOKit
 import Darwin
 
-struct ProcessUsage: Identifiable, Sendable {
-    let pid: Int32
-    let name: String
-    let cpuUsage: Double
-    let memoryUsage: Double
-    let memoryBytes: UInt64
+public struct ProcessUsage: Identifiable, Sendable {
+    public let pid: Int32
+    public let name: String
+    public let cpuUsage: Double
+    public let memoryUsage: Double
+    public let memoryBytes: UInt64
 
-    var id: Int32 { pid }
+    public var id: Int32 { pid }
 }
 
-struct ResourceSnapshot: Sendable {
-    let cpuUsage: Double?
-    let memoryUsed: UInt64
-    let memoryTotal: UInt64
-    let diskUsed: UInt64
-    let diskTotal: UInt64
-    let gpuUsage: Double?
-    let gpuName: String?
-    let networkDownloadRate: Double
-    let networkUploadRate: Double
-    let processes: [ProcessUsage]
-    let updatedAt: Date
+public struct ResourceSnapshot: Sendable {
+    public let cpuUsage: Double?
+    public let memoryUsed: UInt64
+    public let memoryTotal: UInt64
+    public let diskUsed: UInt64
+    public let diskTotal: UInt64
+    public let gpuUsage: Double?
+    public let gpuName: String?
+    public let networkDownloadRate: Double
+    public let networkUploadRate: Double
+    public let processes: [ProcessUsage]
+    public let updatedAt: Date
 
-    var memoryUsage: Double {
+    public var memoryUsage: Double {
         guard memoryTotal > 0 else { return 0 }
         return Double(memoryUsed) / Double(memoryTotal)
     }
 
-    var diskUsage: Double {
+    public var diskUsage: Double {
         guard diskTotal > 0 else { return 0 }
         return Double(diskUsed) / Double(diskTotal)
     }
 }
 
-final class MetricsReader {
+public final class MetricsReader {
     private var previousCPU: [UInt64]?
     private var previousNetwork: (received: UInt64, sent: UInt64, date: Date)?
 
-    func read() -> ResourceSnapshot {
+    public init() {}
+
+    public func read() -> ResourceSnapshot {
         let cpu = readCPU()
         let memory = readMemory()
         let disk = readDisk()

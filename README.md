@@ -106,3 +106,25 @@ Para compilar e gerar o aplicativo:
 
 O resultado fica em `dist/Monitoramento de Recursos.app`. A versão atual é
 local e não configura inicialização automática com o macOS.
+
+## MCP para agentes de IA
+
+O projeto também inclui um servidor MCP local por `stdio`. Ele permite que um
+agente consulte o estado atual da máquina sem acessar a interface gráfica e sem
+enviar telemetria para um serviço externo.
+
+Ferramentas disponíveis:
+
+- `get_system_resources`: CPU, RAM, GPU, disco principal, rede e quantidade de processos;
+- `get_top_processes`: processos que mais consomem CPU ou RAM.
+
+Compile o servidor MCP com:
+
+```sh
+./scripts/build-mcp.sh
+```
+
+Depois, registre `scripts/run-mcp.sh` no cliente MCP do agente. Há um exemplo
+em [`docs/mcp-config.example.json`](docs/mcp-config.example.json); substitua
+`/path/to/mac-resource-monitor` pelo caminho local do clone. O servidor usa
+somente `stdout` para o protocolo MCP e não imprime logs misturados às respostas.

@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import MacResourceMonitorCore
 
 struct MonitorView: View {
     @ObservedObject var model: MonitorModel
