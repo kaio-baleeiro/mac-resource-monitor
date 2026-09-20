@@ -117,6 +117,9 @@ Ferramentas disponíveis:
 
 - `get_system_resources`: CPU, RAM, GPU, disco principal, rede e quantidade de processos;
 - `get_top_processes`: processos que mais consomem CPU ou RAM.
+- `get_process_details`: detalhes atuais de um processo pelo PID;
+- `get_machine_info`: contexto do macOS, arquitetura, CPUs, memória física e GPU;
+- `get_metric_capabilities`: métricas disponíveis, limitações e fronteiras de privacidade.
 
 Compile o servidor MCP com:
 
@@ -128,3 +131,20 @@ Depois, registre `scripts/run-mcp.sh` no cliente MCP do agente. Há um exemplo
 em [`docs/mcp-config.example.json`](docs/mcp-config.example.json); substitua
 `/path/to/mac-resource-monitor` pelo caminho local do clone. O servidor usa
 somente `stdout` para o protocolo MCP e não imprime logs misturados às respostas.
+
+Há instruções específicas para Codex, Claude Code/Desktop, Gemini CLI, Devin,
+Cursor e VS Code em [`docs/mcp-clients.md`](docs/mcp-clients.md). Para Claude
+Desktop, também é possível gerar o bundle instalável `.mcpb`:
+
+```sh
+./scripts/build-mcpb.sh
+```
+
+Os cenários automatizados podem ser executados com:
+
+```sh
+./scripts/test-mcp.sh
+```
+
+O runner valida 1.962 cenários distintos de protocolo, schemas, argumentos,
+leituras de recursos e consultas de processos.

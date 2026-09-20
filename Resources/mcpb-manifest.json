@@ -1,0 +1,31 @@
+{
+  "manifest_version": "0.3",
+  "name": "mac-resource-monitor",
+  "display_name": "Mac Resource Monitor",
+  "version": "0.2.0",
+  "description": "Read-only local macOS hardware resource metrics for MCP-compatible AI agents.",
+  "author": {
+    "name": "mac-resource-monitor contributors"
+  },
+  "server": {
+    "type": "binary",
+    "entry_point": "server/mac-resource-monitor-mcp",
+    "mcp_config": {
+      "command": "${__dirname}/server/mac-resource-monitor-mcp",
+      "args": []
+    }
+  },
+  "tools": [
+    { "name": "get_system_resources", "description": "Read current CPU, RAM, GPU, disk and network usage." },
+    { "name": "get_top_processes", "description": "List processes using the most CPU or memory." },
+    { "name": "get_process_details", "description": "Inspect a process by PID." },
+    { "name": "get_machine_info", "description": "Read OS, architecture, CPU and physical memory context." },
+    { "name": "get_metric_capabilities", "description": "Explain metrics, limitations and privacy boundaries." }
+  ],
+  "tools_generated": true,
+  "keywords": ["macOS", "Apple Silicon", "hardware", "monitoring", "resources", "MCP"],
+  "license": "MIT",
+  "compatibility": {
+    "platforms": ["darwin"]
+  }
+}

@@ -10,6 +10,20 @@ public struct ProcessUsage: Identifiable, Sendable {
     public let memoryBytes: UInt64
 
     public var id: Int32 { pid }
+
+    public init(
+        pid: Int32,
+        name: String,
+        cpuUsage: Double,
+        memoryUsage: Double,
+        memoryBytes: UInt64
+    ) {
+        self.pid = pid
+        self.name = name
+        self.cpuUsage = cpuUsage
+        self.memoryUsage = memoryUsage
+        self.memoryBytes = memoryBytes
+    }
 }
 
 public struct ResourceSnapshot: Sendable {
@@ -24,6 +38,32 @@ public struct ResourceSnapshot: Sendable {
     public let networkUploadRate: Double
     public let processes: [ProcessUsage]
     public let updatedAt: Date
+
+    public init(
+        cpuUsage: Double?,
+        memoryUsed: UInt64,
+        memoryTotal: UInt64,
+        diskUsed: UInt64,
+        diskTotal: UInt64,
+        gpuUsage: Double?,
+        gpuName: String?,
+        networkDownloadRate: Double,
+        networkUploadRate: Double,
+        processes: [ProcessUsage],
+        updatedAt: Date = Date()
+    ) {
+        self.cpuUsage = cpuUsage
+        self.memoryUsed = memoryUsed
+        self.memoryTotal = memoryTotal
+        self.diskUsed = diskUsed
+        self.diskTotal = diskTotal
+        self.gpuUsage = gpuUsage
+        self.gpuName = gpuName
+        self.networkDownloadRate = networkDownloadRate
+        self.networkUploadRate = networkUploadRate
+        self.processes = processes
+        self.updatedAt = updatedAt
+    }
 
     public var memoryUsage: Double {
         guard memoryTotal > 0 else { return 0 }

@@ -16,3 +16,7 @@ jobs:
         run: swift build -c release --product MacResourceMonitor
       - name: Build MCP server
         run: swift build -c release --product MacResourceMonitorMCP
+      - name: Run MCP scenario suite
+        run: ./scripts/test-mcp.sh
+      - name: Build MCP Bundle
+        run: ./scripts/build-mcpb.sh
