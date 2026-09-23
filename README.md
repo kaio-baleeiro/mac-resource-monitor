@@ -11,7 +11,7 @@ tags:
 type: project
 status: active
 created: 2026-09-19
-updated: 2026-09-19
+updated: 2026-09-23
 source_agent: codex
 agent_context: mac-hardware-monitoring
 confidence: medium
@@ -89,9 +89,16 @@ clareza e diagnóstico cotidiano, não uma coleção completa de métricas.
 
 A primeira implementação é um app nativo de barra de menus, sem dependências
 externas. O ícone usa o indicador de velocímetro do sistema; ao clicar nele,
-abre um painel compacto com CPU, RAM, GPU e disco principal, atualizado uma vez
-por segundo. O botão **Detalhes** amplia o painel e mostra velocidade de rede,
-quantidade de processos lidos e os processos que mais consomem CPU e RAM.
+abre um painel compacto com CPU, RAM, GPU e armazenamento, atualizado enquanto o
+popover está aberto. O botão **Detalhes** mantém um resumo compacto dos quatro
+recursos e mostra velocidade de rede, quantidade de processos visíveis e os
+processos que mais consomem CPU e RAM. Cada linha de processo pode ser aberta
+para copiar o PID ou iniciar o Monitor de Atividade.
+
+O coletor roda fora da interface, pausa quando o popover fecha e diferencia
+leituras válidas, aquecimento de baseline, indisponibilidade e falha. Uma métrica
+indisponível não é apresentada como zero; o MCP também inclui esses estados no
+payload de `get_system_resources`.
 
 O macOS não oferece ao app, de forma pública e confiável, a divisão da GPU por
 processo. A leitura de I/O de disco por processo também exige uma coleta
@@ -146,5 +153,6 @@ Os cenários automatizados podem ser executados com:
 ./scripts/test-mcp.sh
 ```
 
-O runner valida 1.962 cenários distintos de protocolo, schemas, argumentos,
-leituras de recursos e consultas de processos.
+O runner valida 2.000 cenários distintos de protocolo, schemas, argumentos,
+leituras de recursos, consultas de processos e degradação simulada para
+permissões ou métricas indisponíveis.

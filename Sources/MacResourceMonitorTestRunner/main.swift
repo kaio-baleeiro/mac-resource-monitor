@@ -45,9 +45,55 @@ private func fixture(_ variant: Int) -> ResourceSnapshot {
     )
 }
 
+private func simulatedSnapshot(
+    cpuStatus: MetricStatus = .available,
+    memoryStatus: MetricStatus = .available,
+    diskStatus: MetricStatus = .available,
+    gpuStatus: MetricStatus = .available,
+    networkStatus: MetricStatus = .available,
+    processStatus: MetricStatus = .available,
+    includeProcesses: Bool = true
+) -> ResourceSnapshot {
+    let processes = includeProcesses
+        ? [ProcessUsage(
+            pid: 42_001,
+            name: "corporate-test-process",
+            cpuUsage: 12.5,
+            memoryUsage: 0.25,
+            memoryBytes: 256_000_000
+        )]
+        : []
+
+    // Deliberately keep values populated even for failed/unavailable states.
+    // The protocol layer must use the state and never expose stale values.
+    return ResourceSnapshot(
+        cpuUsage: 0.73,
+        memoryUsed: 12_000_000_000,
+        memoryTotal: 16_000_000_000,
+        diskUsed: 400_000_000_000,
+        diskTotal: 500_000_000_000,
+        gpuUsage: 0.61,
+        gpuName: "Simulated Apple GPU",
+        networkDownloadRate: 12_345,
+        networkUploadRate: 6_789,
+        processes: processes,
+        updatedAt: fixedDate,
+        cpuStatus: cpuStatus,
+        memoryStatus: memoryStatus,
+        diskStatus: diskStatus,
+        gpuStatus: gpuStatus,
+        networkStatus: networkStatus,
+        processStatus: processStatus
+    )
+}
+
 private func handler(for variant: Int) -> MCPRequestHandler {
     let snapshot = fixture(variant)
     return MCPRequestHandler(snapshotProvider: { snapshot })
+}
+
+private func handler(for snapshot: ResourceSnapshot) -> MCPRequestHandler {
+    MCPRequestHandler(snapshotProvider: { snapshot })
 }
 
 private func object(_ data: Data) throws -> [String: Any] {
@@ -84,6 +130,7 @@ private func structured(_ response: [String: Any]) throws -> [String: Any] {
 
 private func integer(_ value: Any?) -> Int? { (value as? NSNumber)?.intValue }
 private func decimal(_ value: Any?) -> Double? { (value as? NSNumber)?.doubleValue }
+private func isNull(_ value: Any?) -> Bool { value is NSNull }
 
 @main
 struct MacResourceMonitorTestRunner {
@@ -108,6 +155,7 @@ struct MacResourceMonitorTestRunner {
         try basicProtocolScenarios()
         try topProcessScenarios()
         try systemResourceScenarios()
+        try simulatedPermissionScenarios()
         try processDetailScenarios()
         try validationScenarios()
         try catalogScenarios()
@@ -171,6 +219,63 @@ struct MacResourceMonitorTestRunner {
             try check(decimal(value["network_download_bytes_per_second"]) == Double(index * 123), "download rate \(index)")
             try check(decimal(value["network_upload_bytes_per_second"]) == Double(index * 97), "upload rate \(index)")
         }
+    }
+
+    private mutating func simulatedPermissionScenarios() throws {
+        let blockedStatuses: [MetricStatus] = [.warmingUp, .unavailable, .failed]
+
+        for status in blockedStatuses {
+            let snapshot = simulatedSnapshot(cpuStatus: status, gpuStatus: status)
+            let response = try object(handler(for: snapshot).handle(line: toolCall(id: 10_000, name: "get_system_resources"))!)
+            let value = try structured(response)
+
+            try check(value["cpu_usage_state"] as? String == status.rawValue, "CPU state \(status.rawValue)")
+            try check(isNull(value["cpu_usage_percent"]), "CPU stale value hidden \(status.rawValue)")
+            try check(value["gpu_usage_state"] as? String == status.rawValue, "GPU state \(status.rawValue)")
+            try check(isNull(value["gpu_usage_percent"]), "GPU stale value hidden \(status.rawValue)")
+            try check(isNull(value["gpu_name"]), "GPU name hidden \(status.rawValue)")
+        }
+
+        let metricCases: [(String, ResourceSnapshot, String, String)] = [
+            ("memory", simulatedSnapshot(memoryStatus: .failed), "memory_usage_percent", "memory_usage_state"),
+            ("disk", simulatedSnapshot(diskStatus: .unavailable), "disk_usage_percent", "disk_usage_state"),
+            ("network", simulatedSnapshot(networkStatus: .failed), "network_download_bytes_per_second", "network_state")
+        ]
+        for (name, snapshot, valueKey, stateKey) in metricCases {
+            let response = try object(handler(for: snapshot).handle(line: toolCall(id: 10_001, name: "get_system_resources"))!)
+            let value = try structured(response)
+            try check(isNull(value[valueKey]), "\(name) value hidden when blocked")
+            try check((value[stateKey] as? String) == (name == "disk" ? "unavailable" : "failed"), "\(name) state preserved")
+        }
+
+        for status in blockedStatuses {
+            let snapshot = simulatedSnapshot(processStatus: status)
+            let resourceResponse = try object(handler(for: snapshot).handle(line: toolCall(id: 10_002, name: "get_system_resources"))!)
+            let resourceValue = try structured(resourceResponse)
+            try check(isNull(resourceValue["process_count"]), "process count hidden \(status.rawValue)")
+            try check(resourceValue["process_state"] as? String == status.rawValue, "process state preserved \(status.rawValue)")
+
+            let rankingResponse = try object(handler(for: snapshot).handle(line: toolCall(id: 10_003, name: "get_top_processes"))!)
+            let rankingResult = try result(rankingResponse)
+            try check(rankingResult["isError"] as? Bool == true, "ranking fails safely \(status.rawValue)")
+
+            let detailsResponse = try object(handler(for: snapshot).handle(line: toolCall(id: 10_004, name: "get_process_details", arguments: ["pid": 42_001]))!)
+            let detailsResult = try result(detailsResponse)
+            try check(detailsResult["isError"] as? Bool == true, "process details fail safely \(status.rawValue)")
+        }
+
+        let emptyProcessSnapshot = simulatedSnapshot(processStatus: .available, includeProcesses: false)
+        let emptyRanking = try object(handler(for: emptyProcessSnapshot).handle(line: toolCall(id: 10_005, name: "get_top_processes"))!)
+        let emptyRankingValue = try structured(emptyRanking)
+        try check((emptyRankingValue["processes"] as? [[String: Any]])?.isEmpty == true, "available empty process list is not treated as blocked")
+
+        let mixedFailureSnapshot = simulatedSnapshot(gpuStatus: .unavailable, processStatus: .failed)
+        let mixedResponse = try object(handler(for: mixedFailureSnapshot).handle(line: toolCall(id: 10_006, name: "get_system_resources"))!)
+        let mixedValue = try structured(mixedResponse)
+        try check(decimal(mixedValue["memory_usage_percent"]) == 75, "unrelated memory metric remains available")
+        try check(decimal(mixedValue["disk_usage_percent"]) == 80, "unrelated disk metric remains available")
+        try check(isNull(mixedValue["gpu_usage_percent"]), "GPU failure is isolated")
+        try check(isNull(mixedValue["process_count"]), "process failure is isolated")
     }
 
     private mutating func processDetailScenarios() throws {

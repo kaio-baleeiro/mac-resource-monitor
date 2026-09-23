@@ -2,6 +2,13 @@ import Foundation
 import IOKit
 import Darwin
 
+public enum MetricStatus: String, Sendable, Equatable {
+    case available
+    case warmingUp
+    case unavailable
+    case failed
+}
+
 public struct ProcessUsage: Identifiable, Sendable {
     public let pid: Int32
     public let name: String
@@ -38,6 +45,13 @@ public struct ResourceSnapshot: Sendable {
     public let networkUploadRate: Double
     public let processes: [ProcessUsage]
     public let updatedAt: Date
+    public let cpuStatus: MetricStatus
+    public let memoryStatus: MetricStatus
+    public let diskStatus: MetricStatus
+    public let gpuStatus: MetricStatus
+    public let networkStatus: MetricStatus
+    public let processStatus: MetricStatus
+    public let collectionDuration: TimeInterval
 
     public init(
         cpuUsage: Double?,
@@ -50,7 +64,14 @@ public struct ResourceSnapshot: Sendable {
         networkDownloadRate: Double,
         networkUploadRate: Double,
         processes: [ProcessUsage],
-        updatedAt: Date = Date()
+        updatedAt: Date = Date(),
+        cpuStatus: MetricStatus = .available,
+        memoryStatus: MetricStatus = .available,
+        diskStatus: MetricStatus = .available,
+        gpuStatus: MetricStatus = .available,
+        networkStatus: MetricStatus = .available,
+        processStatus: MetricStatus = .available,
+        collectionDuration: TimeInterval = 0
     ) {
         self.cpuUsage = cpuUsage
         self.memoryUsed = memoryUsed
@@ -63,6 +84,13 @@ public struct ResourceSnapshot: Sendable {
         self.networkUploadRate = networkUploadRate
         self.processes = processes
         self.updatedAt = updatedAt
+        self.cpuStatus = cpuStatus
+        self.memoryStatus = memoryStatus
+        self.diskStatus = diskStatus
+        self.gpuStatus = gpuStatus
+        self.networkStatus = networkStatus
+        self.processStatus = processStatus
+        self.collectionDuration = collectionDuration
     }
 
     public var memoryUsage: Double {
@@ -76,13 +104,34 @@ public struct ResourceSnapshot: Sendable {
     }
 }
 
-public final class MetricsReader {
+public final class MetricsReader: @unchecked Sendable {
+    private let queue = DispatchQueue(label: "local.macresourcemonitor.metrics", qos: .utility)
     private var previousCPU: [UInt64]?
     private var previousNetwork: (received: UInt64, sent: UInt64, date: Date)?
 
     public init() {}
 
     public func read() -> ResourceSnapshot {
+        queue.sync { readLocked() }
+    }
+
+    public func readAsync() async -> ResourceSnapshot {
+        await withCheckedContinuation { continuation in
+            queue.async {
+                continuation.resume(returning: self.readLocked())
+            }
+        }
+    }
+
+    public func resetBaselines() {
+        queue.sync {
+            previousCPU = nil
+            previousNetwork = nil
+        }
+    }
+
+    private func readLocked() -> ResourceSnapshot {
+        let startedAt = Date()
         let cpu = readCPU()
         let memory = readMemory()
         let disk = readDisk()
@@ -91,7 +140,7 @@ public final class MetricsReader {
         let processes = readProcesses()
 
         return ResourceSnapshot(
-            cpuUsage: cpu,
+            cpuUsage: cpu.value,
             memoryUsed: memory.used,
             memoryTotal: memory.total,
             diskUsed: disk.used,
@@ -100,12 +149,19 @@ public final class MetricsReader {
             gpuName: gpu.name,
             networkDownloadRate: network.download,
             networkUploadRate: network.upload,
-            processes: processes,
-            updatedAt: Date()
+            processes: processes.value,
+            updatedAt: Date(),
+            cpuStatus: cpu.status,
+            memoryStatus: memory.status,
+            diskStatus: disk.status,
+            gpuStatus: gpu.status,
+            networkStatus: network.status,
+            processStatus: processes.status,
+            collectionDuration: Date().timeIntervalSince(startedAt)
         )
     }
 
-    private func readCPU() -> Double? {
+    private func readCPU() -> (value: Double?, status: MetricStatus) {
         var cpuCount: natural_t = 0
         var cpuInfo: processor_info_array_t?
         var cpuInfoCount: mach_msg_type_number_t = 0
@@ -117,7 +173,7 @@ public final class MetricsReader {
             &cpuInfoCount
         )
 
-        guard result == KERN_SUCCESS, let cpuInfo else { return nil }
+        guard result == KERN_SUCCESS, let cpuInfo else { return (nil, .failed) }
         defer {
             let size = vm_size_t(cpuInfoCount) * vm_size_t(MemoryLayout<integer_t>.stride)
             vm_deallocate(mach_task_self_, vm_address_t(bitPattern: cpuInfo), size)
@@ -132,15 +188,15 @@ public final class MetricsReader {
         }
 
         defer { previousCPU = totals }
-        guard let previousCPU else { return nil }
+        guard let previousCPU else { return (nil, .warmingUp) }
 
         let deltaTotal = totals.reduce(0, +) - previousCPU.reduce(0, +)
         let deltaIdle = totals[Int(CPU_STATE_IDLE)] - previousCPU[Int(CPU_STATE_IDLE)]
-        guard deltaTotal > 0 else { return nil }
-        return min(max(1 - Double(deltaIdle) / Double(deltaTotal), 0), 1)
+        guard deltaTotal > 0 else { return (nil, .failed) }
+        return (min(max(1 - Double(deltaIdle) / Double(deltaTotal), 0), 1), .available)
     }
 
-    private func readMemory() -> (used: UInt64, total: UInt64) {
+    private func readMemory() -> (used: UInt64, total: UInt64, status: MetricStatus) {
         var stats = vm_statistics64()
         var count = mach_msg_type_number_t(
             MemoryLayout<vm_statistics64_data_t>.stride / MemoryLayout<integer_t>.stride
@@ -151,34 +207,35 @@ public final class MetricsReader {
             }
         }
         let total = ProcessInfo.processInfo.physicalMemory
-        guard result == KERN_SUCCESS else { return (0, total) }
+        guard result == KERN_SUCCESS, total > 0 else { return (0, total, .failed) }
 
         let pageSize = UInt64(sysconf(_SC_PAGESIZE))
         let usedPages = UInt64(stats.active_count)
             + UInt64(stats.inactive_count)
             + UInt64(stats.wire_count)
             + UInt64(stats.compressor_page_count)
-        return (min(usedPages * pageSize, total), total)
+        return (min(usedPages * pageSize, total), total, .available)
     }
 
-    private func readDisk() -> (used: UInt64, total: UInt64) {
+    private func readDisk() -> (used: UInt64, total: UInt64, status: MetricStatus) {
         do {
             let values = try URL(fileURLWithPath: "/").resourceValues(
                 forKeys: [.volumeTotalCapacityKey, .volumeAvailableCapacityForImportantUsageKey]
             )
             let total = UInt64(values.volumeTotalCapacity ?? 0)
             let available = UInt64(max(values.volumeAvailableCapacityForImportantUsage ?? 0, 0))
-            return (total > available ? total - available : 0, total)
+            guard total > 0 else { return (0, 0, .unavailable) }
+            return (total > available ? total - available : 0, total, .available)
         } catch {
-            return (0, 0)
+            return (0, 0, .failed)
         }
     }
 
-    private func readGPU() -> (usage: Double?, name: String?) {
+    private func readGPU() -> (usage: Double?, name: String?, status: MetricStatus) {
         let matching = IOServiceMatching("IOAccelerator")
         var iterator: io_iterator_t = 0
         guard IOServiceGetMatchingServices(kIOMainPortDefault, matching, &iterator) == KERN_SUCCESS else {
-            return (nil, nil)
+            return (nil, nil, .unavailable)
         }
         defer { IOObjectRelease(iterator) }
 
@@ -197,17 +254,17 @@ public final class MetricsReader {
                 let value = (stats["Device Utilization %"] as? NSNumber)?.doubleValue
                     ?? (stats["Renderer Utilization %"] as? NSNumber)?.doubleValue
                 if let value {
-                    return (min(max(value / 100, 0), 1), model)
+                    return (min(max(value / 100, 0), 1), model, .available)
                 }
             }
             service = IOIteratorNext(iterator)
         }
-        return (nil, nil)
+        return (nil, nil, .unavailable)
     }
 
-    private func readNetwork() -> (download: Double, upload: Double) {
+    private func readNetwork() -> (download: Double, upload: Double, status: MetricStatus) {
         var addresses: UnsafeMutablePointer<ifaddrs>?
-        guard getifaddrs(&addresses) == 0, let addresses else { return (0, 0) }
+        guard getifaddrs(&addresses) == 0, let addresses else { return (0, 0, .failed) }
         defer { freeifaddrs(addresses) }
 
         var received: UInt64 = 0
@@ -227,14 +284,14 @@ public final class MetricsReader {
 
         let now = Date()
         defer { previousNetwork = (received, sent, now) }
-        guard let previousNetwork else { return (0, 0) }
+        guard let previousNetwork else { return (0, 0, .warmingUp) }
         let elapsed = max(now.timeIntervalSince(previousNetwork.date), 0.1)
         let download = Double(received >= previousNetwork.received ? received - previousNetwork.received : 0) / elapsed
         let upload = Double(sent >= previousNetwork.sent ? sent - previousNetwork.sent : 0) / elapsed
-        return (download, upload)
+        return (download, upload, .available)
     }
 
-    private func readProcesses() -> [ProcessUsage] {
+    private func readProcesses() -> (value: [ProcessUsage], status: MetricStatus) {
         let process = Process()
         let output = Pipe()
         process.executableURL = URL(fileURLWithPath: "/bin/ps")
@@ -243,31 +300,35 @@ public final class MetricsReader {
 
         do {
             try process.run()
+            // Drain stdout before waiting: a busy Mac can produce enough output
+            // to fill the pipe and deadlock the producer if we wait first.
+            let data = output.fileHandleForReading.readDataToEndOfFile()
             process.waitUntilExit()
+            guard process.terminationStatus == 0 else { return ([], .failed) }
+
+            guard let text = String(data: data, encoding: .utf8) else { return ([], .failed) }
+
+            let processes: [ProcessUsage] = text.split(whereSeparator: \.isNewline).compactMap { line -> ProcessUsage? in
+                let fields = line.split(maxSplits: 4, omittingEmptySubsequences: true, whereSeparator: \.isWhitespace)
+                guard fields.count == 5,
+                      let pid = Int32(fields[0]),
+                      let cpu = Double(fields[1]),
+                      let memory = Double(fields[2]),
+                      let residentKB = UInt64(fields[3]) else { return nil }
+
+                let command = String(fields[4])
+                let name = command.split(separator: "/").last.map(String.init) ?? command
+                return ProcessUsage(
+                    pid: pid,
+                    name: name,
+                    cpuUsage: max(cpu, 0),
+                    memoryUsage: max(memory / 100, 0),
+                    memoryBytes: residentKB * 1024
+                )
+            }
+            return (processes, .available)
         } catch {
-            return []
-        }
-
-        let data = output.fileHandleForReading.readDataToEndOfFile()
-        guard let text = String(data: data, encoding: .utf8) else { return [] }
-
-        return text.split(whereSeparator: \.isNewline).compactMap { line in
-            let fields = line.split(maxSplits: 4, omittingEmptySubsequences: true, whereSeparator: \.isWhitespace)
-            guard fields.count == 5,
-                  let pid = Int32(fields[0]),
-                  let cpu = Double(fields[1]),
-                  let memory = Double(fields[2]),
-                  let residentKB = UInt64(fields[3]) else { return nil }
-
-            let command = String(fields[4])
-            let name = command.split(separator: "/").last.map(String.init) ?? command
-            return ProcessUsage(
-                pid: pid,
-                name: name,
-                cpuUsage: max(cpu, 0),
-                memoryUsage: max(memory / 100, 0),
-                memoryBytes: residentKB * 1024
-            )
+            return ([], .failed)
         }
     }
 }

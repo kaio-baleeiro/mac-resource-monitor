@@ -152,6 +152,9 @@ public struct MCPRequestHandler {
         }
 
         let snapshot = snapshotProvider()
+        guard snapshot.processStatus == .available else {
+            return toolError(id: id, message: "A lista de processos está indisponível nesta leitura")
+        }
         let processes = snapshot.processes.sorted {
             resource == "cpu" ? $0.cpuUsage > $1.cpuUsage : $0.memoryBytes > $1.memoryBytes
         }
@@ -169,6 +172,9 @@ public struct MCPRequestHandler {
             return toolError(id: id, message: "pid deve ser um inteiro positivo")
         }
         let snapshot = snapshotProvider()
+        guard snapshot.processStatus == .available else {
+            return toolError(id: id, message: "A lista de processos está indisponível nesta leitura")
+        }
         guard let process = snapshot.processes.first(where: { $0.pid == Int32(pid) }) else {
             return toolError(id: id, message: "Processo não encontrado: \(pid)")
         }
@@ -178,18 +184,24 @@ public struct MCPRequestHandler {
     private func systemResourcePayload(_ snapshot: ResourceSnapshot) -> [String: Any] {
         [
             "updated_at": timestamp(snapshot.updatedAt),
-            "cpu_usage_percent": numberOrNull(snapshot.cpuUsage.map { $0 * 100 }),
-            "memory_usage_percent": snapshot.memoryUsage * 100,
-            "memory_used_bytes": snapshot.memoryUsed,
-            "memory_total_bytes": snapshot.memoryTotal,
-            "disk_usage_percent": snapshot.diskUsage * 100,
-            "disk_used_bytes": snapshot.diskUsed,
-            "disk_total_bytes": snapshot.diskTotal,
-            "gpu_usage_percent": numberOrNull(snapshot.gpuUsage.map { $0 * 100 }),
-            "gpu_name": snapshot.gpuName ?? NSNull(),
-            "network_download_bytes_per_second": snapshot.networkDownloadRate,
-            "network_upload_bytes_per_second": snapshot.networkUploadRate,
-            "process_count": snapshot.processes.count
+            "cpu_usage_percent": metricNumber(snapshot.cpuUsage.map { $0 * 100 }, status: snapshot.cpuStatus),
+            "cpu_usage_state": snapshot.cpuStatus.rawValue,
+            "memory_usage_percent": snapshot.memoryStatus == .available ? snapshot.memoryUsage * 100 : NSNull(),
+            "memory_usage_state": snapshot.memoryStatus.rawValue,
+            "memory_used_bytes": snapshot.memoryStatus == .available ? snapshot.memoryUsed : NSNull(),
+            "memory_total_bytes": snapshot.memoryStatus == .available ? snapshot.memoryTotal : NSNull(),
+            "disk_usage_percent": snapshot.diskStatus == .available ? snapshot.diskUsage * 100 : NSNull(),
+            "disk_usage_state": snapshot.diskStatus.rawValue,
+            "disk_used_bytes": snapshot.diskStatus == .available ? snapshot.diskUsed : NSNull(),
+            "disk_total_bytes": snapshot.diskStatus == .available ? snapshot.diskTotal : NSNull(),
+            "gpu_usage_percent": metricNumber(snapshot.gpuUsage.map { $0 * 100 }, status: snapshot.gpuStatus),
+            "gpu_name": gpuNameValue(snapshot),
+            "gpu_usage_state": snapshot.gpuStatus.rawValue,
+            "network_download_bytes_per_second": snapshot.networkStatus == .available ? snapshot.networkDownloadRate : NSNull(),
+            "network_upload_bytes_per_second": snapshot.networkStatus == .available ? snapshot.networkUploadRate : NSNull(),
+            "network_state": snapshot.networkStatus.rawValue,
+            "process_count": snapshot.processStatus == .available ? snapshot.processes.count : NSNull(),
+            "process_state": snapshot.processStatus.rawValue
         ]
     }
 
@@ -209,18 +221,19 @@ public struct MCPRequestHandler {
         [
             "scope": "local_read_only",
             "metrics": [
-                ["name": "cpu_usage_percent", "available": true, "notes": "Amostra instantânea agregada; pode ser nula na primeira leitura."],
-                ["name": "memory_usage_percent", "available": true, "notes": "Inclui páginas ativas, inativas, wired e compressor."],
-                ["name": "disk_usage_percent", "available": true, "notes": "Volume principal montado em /."],
+                ["name": "cpu_usage_percent", "available": true, "notes": "Amostra instantânea agregada; o estado warmingUp indica que ainda não há baseline."],
+                ["name": "memory_usage_percent", "available": true, "notes": "Inclui páginas ativas, inativas, wired e compressor; null acompanhado de estado não é zero."],
+                ["name": "disk_usage_percent", "available": true, "notes": "Volume principal montado em /; null acompanhado de estado indica falha ou indisponibilidade."],
                 ["name": "gpu_usage_percent", "available": true, "notes": "Pode ser nula quando o macOS não publica a utilização do acelerador."],
-                ["name": "network_bytes_per_second", "available": true, "notes": "Estimativa baseada em interfaces ativas não-loopback."],
-                ["name": "process_cpu_and_memory", "available": true, "notes": "Lista derivada de processos visíveis ao usuário que executa o servidor."],
+                ["name": "network_bytes_per_second", "available": true, "notes": "Estimativa baseada em interfaces ativas não-loopback; warmingUp ocorre na primeira leitura."],
+                ["name": "process_cpu_and_memory", "available": true, "notes": "Lista derivada de processos visíveis ao usuário que executa o servidor; falha é diferente de lista vazia."],
                 ["name": "process_command_arguments", "available": false, "notes": "Não são coletados para reduzir exposição de dados locais."],
                 ["name": "file_contents", "available": false, "notes": "Nunca são lidos por este servidor." ]
             ],
             "limitations": [
                 "Os dados representam uma leitura do momento, não um histórico persistido.",
                 "Permissões do macOS podem limitar quais processos aparecem.",
+                "Estados available, warmingUp, unavailable e failed acompanham as métricas; valores null não representam zero.",
                 "O servidor usa transporte stdio local e não abre portas de rede."
             ]
         ]
@@ -277,6 +290,15 @@ public struct MCPRequestHandler {
 
     private func numberOrNull(_ value: Double?) -> Any {
         value ?? NSNull()
+    }
+
+    private func metricNumber(_ value: Double?, status: MetricStatus) -> Any {
+        status == .available ? numberOrNull(value) : NSNull()
+    }
+
+    private func gpuNameValue(_ snapshot: ResourceSnapshot) -> Any {
+        guard snapshot.gpuStatus == .available else { return NSNull() }
+        return snapshot.gpuName ?? NSNull()
     }
 
     private func machineArchitecture() -> String {

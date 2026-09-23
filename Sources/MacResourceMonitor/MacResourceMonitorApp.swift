@@ -9,6 +9,8 @@ struct MacResourceMonitorApp: App {
             MonitorView(model: model)
         } label: {
             Image(systemName: "gauge.with.dots.needle.67percent")
+                .accessibilityLabel("Recursos do Mac")
+                .help("Mostrar recursos do Mac")
         }
         .menuBarExtraStyle(.window)
     }
