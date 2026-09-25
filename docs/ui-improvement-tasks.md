@@ -16,6 +16,7 @@
 - [x] Manter uma cor própria para CPU, RAM, GPU e armazenamento nos modos compacto e detalhado.
 - [x] Simular aquecimento, indisponibilidade e falha de métricas sem executar o coletor real.
 - [x] Ocultar valores antigos no MCP quando o estado da métrica não for confiável.
+- [x] Adicionar instalação e remoção da inicialização automática via LaunchAgent.
 
 ## Próxima rodada
 

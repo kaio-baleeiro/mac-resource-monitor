@@ -112,7 +112,22 @@ Para compilar e gerar o aplicativo:
 ```
 
 O resultado fica em `dist/Monitoramento de Recursos.app`. A versão atual é
-local e não configura inicialização automática com o macOS.
+local e pode ser configurada para iniciar automaticamente no login do usuário:
+
+```sh
+./scripts/install-launch-agent.sh
+```
+
+Isso instala um `LaunchAgent` em `~/Library/LaunchAgents` e inicia o app na
+sessão gráfica do usuário. Para remover a inicialização automática:
+
+```sh
+./scripts/uninstall-launch-agent.sh
+```
+
+O recurso não exige privilégios de administrador. Como o app é de barra de
+menus, a inicialização acontece no login do usuário, não antes da tela de
+login.
 
 ## MCP para agentes de IA
 
