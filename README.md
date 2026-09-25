@@ -88,7 +88,8 @@ clareza e diagnóstico cotidiano, não uma coleção completa de métricas.
 ## Primeira versão do app
 
 A primeira implementação é um app nativo de barra de menus, sem dependências
-externas. O ícone usa o indicador de velocímetro do sistema; ao clicar nele,
+externas. O ícone próprio usa um gauge com quatro segmentos coloridos; ao
+clicar nele,
 abre um painel compacto com CPU, RAM, GPU e armazenamento, atualizado enquanto o
 popover está aberto. O botão **Detalhes** mantém um resumo compacto dos quatro
 recursos e mostra velocidade de rede, quantidade de processos visíveis e os

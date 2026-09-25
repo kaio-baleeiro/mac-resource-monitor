@@ -17,6 +17,7 @@
 - [x] Simular aquecimento, indisponibilidade e falha de métricas sem executar o coletor real.
 - [x] Ocultar valores antigos no MCP quando o estado da métrica não for confiável.
 - [x] Adicionar instalação e remoção da inicialização automática via LaunchAgent.
+- [x] Substituir o ícone genérico da barra de menus pelo gauge colorido escolhido.
 
 ## Próxima rodada
 
