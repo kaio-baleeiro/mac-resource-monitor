@@ -13,6 +13,7 @@ mkdir -p "$APP_PATH/Contents/MacOS" "$APP_PATH/Contents/Resources"
 cp "$BIN_PATH" "$APP_PATH/Contents/MacOS/MacResourceMonitor"
 cp "$PROJECT_DIR/Resources/Info.plist" "$APP_PATH/Contents/Info.plist"
 cp "$PROJECT_DIR/Resources/MacResourceMonitorIcon.png" "$APP_PATH/Contents/Resources/MacResourceMonitorIcon.png"
+cp "$PROJECT_DIR/Resources/MacResourceMonitorIcon.icns" "$APP_PATH/Contents/Resources/MacResourceMonitorIcon.icns"
 
 codesign --force --deep --sign - "$APP_PATH" >/dev/null
 echo "$APP_PATH"
