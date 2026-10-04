@@ -2,6 +2,7 @@ import AppKit
 import SwiftUI
 import MacResourceMonitorCore
 
+@MainActor
 struct MonitorView: View {
     @ObservedObject var model: MonitorModel
     @State private var showingDetails = false

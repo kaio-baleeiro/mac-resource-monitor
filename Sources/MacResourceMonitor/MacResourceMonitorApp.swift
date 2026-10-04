@@ -2,6 +2,7 @@ import AppKit
 import SwiftUI
 
 @main
+@MainActor
 struct MacResourceMonitorApp: App {
     @StateObject private var model = MonitorModel()
 
