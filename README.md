@@ -11,7 +11,7 @@ tags:
 type: project
 status: active
 created: 2026-09-19
-updated: 2026-09-23
+updated: 2026-10-03
 source_agent: codex
 agent_context: mac-hardware-monitoring
 confidence: medium
@@ -96,6 +96,12 @@ recursos e mostra velocidade de rede, quantidade de processos visíveis e os
 processos que mais consomem CPU e RAM. Cada linha de processo pode ser aberta
 para copiar o PID ou iniciar o Monitor de Atividade.
 
+O cartão de RAM também mostra o espaço de swap ocupado no SSD e destaca quando
+houve envio recente de páginas para o swap. Em **Detalhes**, os dois sinais
+aparecem separadamente. Swap ocupado pode persistir após o pico de demanda;
+por isso não significa, sozinho, que o Mac está gravando continuamente. A
+taxa de páginas enviadas ao swap não representa bytes físicos gravados no SSD.
+
 O coletor roda fora da interface, pausa quando o popover fecha e diferencia
 leituras válidas, aquecimento de baseline, indisponibilidade e falha. Uma métrica
 indisponível não é apresentada como zero; o MCP também inclui esses estados no
@@ -138,7 +144,7 @@ enviar telemetria para um serviço externo.
 
 Ferramentas disponíveis:
 
-- `get_system_resources`: CPU, RAM, GPU, disco principal, rede e quantidade de processos;
+- `get_system_resources`: CPU, RAM, swap, GPU, disco principal, rede e quantidade de processos;
 - `get_top_processes`: processos que mais consomem CPU ou RAM.
 - `get_process_details`: detalhes atuais de um processo pelo PID;
 - `get_machine_info`: contexto do macOS, arquitetura, CPUs, memória física e GPU;
@@ -169,6 +175,6 @@ Os cenários automatizados podem ser executados com:
 ./scripts/test-mcp.sh
 ```
 
-O runner valida 2.000 cenários distintos de protocolo, schemas, argumentos,
-leituras de recursos, consultas de processos e degradação simulada para
+O runner valida 2.022 cenários distintos de protocolo, schemas, argumentos,
+leituras de recursos, consultas de processos, swap e degradação simulada para
 permissões ou métricas indisponíveis.

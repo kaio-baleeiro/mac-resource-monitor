@@ -55,7 +55,7 @@ public struct MCPRequestHandler {
         [
         [
             "name": "get_system_resources",
-            "description": "Retorna o consumo atual de CPU, memória, GPU, disco principal, rede e quantidade de processos deste Mac.",
+            "description": "Retorna o consumo atual de CPU, memória, swap, GPU, disco principal, rede e quantidade de processos deste Mac.",
             "inputSchema": objectSchema()
         ],
         [
@@ -190,6 +190,12 @@ public struct MCPRequestHandler {
             "memory_usage_state": snapshot.memoryStatus.rawValue,
             "memory_used_bytes": snapshot.memoryStatus == .available ? snapshot.memoryUsed : NSNull(),
             "memory_total_bytes": snapshot.memoryStatus == .available ? snapshot.memoryTotal : NSNull(),
+            "swap_used_bytes": availableValue(snapshot.swap.usedBytes, status: snapshot.swap.usageStatus),
+            "swap_total_bytes": availableValue(snapshot.swap.totalBytes, status: snapshot.swap.usageStatus),
+            "swap_usage_state": snapshot.swap.usageStatus.rawValue,
+            "swap_out_pages_per_second": availableValue(snapshot.swap.outPagesPerSecond, status: snapshot.swap.activityStatus),
+            "swap_activity_state": snapshot.swap.activityStatus.rawValue,
+            "swap_writing_now": availableValue(snapshot.swap.isWriting, status: snapshot.swap.activityStatus),
             "disk_usage_percent": snapshot.diskStatus == .available ? snapshot.diskUsage * 100 : NSNull(),
             "disk_usage_state": snapshot.diskStatus.rawValue,
             "disk_used_bytes": snapshot.diskStatus == .available ? snapshot.diskUsed : NSNull(),
@@ -223,6 +229,8 @@ public struct MCPRequestHandler {
             "metrics": [
                 ["name": "cpu_usage_percent", "available": true, "notes": "Amostra instantânea agregada; o estado warmingUp indica que ainda não há baseline."],
                 ["name": "memory_usage_percent", "available": true, "notes": "Inclui páginas ativas, inativas, wired e compressor; null acompanhado de estado não é zero."],
+                ["name": "swap_used_bytes", "available": true, "notes": "Espaço de swap atualmente ocupado no SSD; não implica escrita contínua."],
+                ["name": "swap_out_pages_per_second", "available": true, "notes": "Páginas enviadas ao swap desde a amostra anterior; não mede bytes físicos gravados no SSD."],
                 ["name": "disk_usage_percent", "available": true, "notes": "Volume principal montado em /; null acompanhado de estado indica falha ou indisponibilidade."],
                 ["name": "gpu_usage_percent", "available": true, "notes": "Pode ser nula quando o macOS não publica a utilização do acelerador."],
                 ["name": "network_bytes_per_second", "available": true, "notes": "Estimativa baseada em interfaces ativas não-loopback; warmingUp ocorre na primeira leitura."],
@@ -294,6 +302,11 @@ public struct MCPRequestHandler {
 
     private func metricNumber(_ value: Double?, status: MetricStatus) -> Any {
         status == .available ? numberOrNull(value) : NSNull()
+    }
+
+    private func availableValue<Value>(_ value: Value?, status: MetricStatus) -> Any {
+        guard status == .available, let value else { return NSNull() }
+        return value
     }
 
     private func gpuNameValue(_ snapshot: ResourceSnapshot) -> Any {

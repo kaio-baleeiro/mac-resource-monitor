@@ -18,10 +18,11 @@
 - [x] Ocultar valores antigos no MCP quando o estado da métrica não for confiável.
 - [x] Adicionar instalação e remoção da inicialização automática via LaunchAgent.
 - [x] Substituir o ícone genérico da barra de menus pelo gauge colorido escolhido.
+- [x] Mostrar uso e atividade recente de swap no cartão de RAM, nos detalhes e no MCP.
 
 ## Próxima rodada
 
-- [ ] Adicionar pressão de memória e swap como métricas separadas.
+- [ ] Adicionar pressão de memória como métrica separada.
 - [ ] Adicionar histórico curto e tendência de CPU/RAM.
 - [ ] Implementar altura baseada na área visível do monitor ativo, validando notch e múltiplos monitores.
 - [ ] Criar testes de unidade para estados, formatação localizada e ciclo de visibilidade.

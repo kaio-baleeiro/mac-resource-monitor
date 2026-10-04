@@ -174,7 +174,7 @@ Também é possível adicionar pela paleta de comandos **MCP: Add Server**.
 
 ## Ferramentas e fluxo recomendado para agentes
 
-- `get_system_resources`: visão atual de CPU, RAM, GPU, disco principal, rede e quantidade de processos.
+- `get_system_resources`: visão atual de CPU, RAM, swap, GPU, disco principal, rede e quantidade de processos. `swap_used_bytes` mostra o espaço ocupado; `swap_out_pages_per_second` e `swap_writing_now` indicam atividade na amostra. Estados separados distinguem primeira leitura, indisponibilidade e falha.
 - `get_top_processes`: ranking de processos por `resource: "cpu"` ou `resource: "memory"`, com `limit` entre 1 e 20.
 - `get_process_details`: consulta pontual pelo `pid`; o processo pode desaparecer entre duas leituras.
 - `get_machine_info`: macOS, arquitetura, CPUs, memória física e GPU detectada.
@@ -187,7 +187,7 @@ utilização do acelerador.
 
 ## Smoke test e suíte de cenários
 
-O runner local executa uma matriz determinística de **2.000 cenários distintos**
+O runner local executa uma matriz determinística de **2.022 cenários distintos**
 sem depender de um processo real ou de dados pessoais. A matriz inclui estados
 simulados de baseline, indisponibilidade, falha de GPU, rede, disco e lista de
 processos:

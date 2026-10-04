@@ -48,6 +48,7 @@ private func fixture(_ variant: Int) -> ResourceSnapshot {
 private func simulatedSnapshot(
     cpuStatus: MetricStatus = .available,
     memoryStatus: MetricStatus = .available,
+    swap: SwapMetrics = .unavailable,
     diskStatus: MetricStatus = .available,
     gpuStatus: MetricStatus = .available,
     networkStatus: MetricStatus = .available,
@@ -70,6 +71,7 @@ private func simulatedSnapshot(
         cpuUsage: 0.73,
         memoryUsed: 12_000_000_000,
         memoryTotal: 16_000_000_000,
+        swap: swap,
         diskUsed: 400_000_000_000,
         diskTotal: 500_000_000_000,
         gpuUsage: 0.61,
@@ -156,6 +158,7 @@ struct MacResourceMonitorTestRunner {
         try topProcessScenarios()
         try systemResourceScenarios()
         try simulatedPermissionScenarios()
+        try swapScenarios()
         try processDetailScenarios()
         try validationScenarios()
         try catalogScenarios()
@@ -188,7 +191,7 @@ struct MacResourceMonitorTestRunner {
         let capabilities = try object(handler(for: 1).handle(line: toolCall(id: 5, name: "get_metric_capabilities"))!)
         let capabilityInfo = try structured(capabilities)
         try check(capabilityInfo["scope"] as? String == "local_read_only", "capability scope")
-        try check((capabilityInfo["metrics"] as? [[String: Any]])?.count == 8, "capability metrics")
+        try check((capabilityInfo["metrics"] as? [[String: Any]])?.count == 10, "capability metrics")
     }
 
     private mutating func topProcessScenarios() throws {
@@ -276,6 +279,70 @@ struct MacResourceMonitorTestRunner {
         try check(decimal(mixedValue["disk_usage_percent"]) == 80, "unrelated disk metric remains available")
         try check(isNull(mixedValue["gpu_usage_percent"]), "GPU failure is isolated")
         try check(isNull(mixedValue["process_count"]), "process failure is isolated")
+    }
+
+    private mutating func swapScenarios() throws {
+        try check(SwapMetrics.pagesPerSecond(previous: 100, current: 120, elapsedSeconds: 2) == 10, "swap rate uses sample interval")
+        try check(SwapMetrics.pagesPerSecond(previous: 100, current: 100, elapsedSeconds: 1) == 0, "swap rate distinguishes idle")
+        try check(SwapMetrics.pagesPerSecond(previous: 120, current: 100, elapsedSeconds: 1) == nil, "counter reset has no rate")
+        try check(SwapMetrics.pagesPerSecond(previous: 100, current: 120, elapsedSeconds: 0) == nil, "zero sample interval has no rate")
+
+        let cases: [(String, SwapMetrics, Bool)] = [
+            ("idle", SwapMetrics(
+                usedBytes: 1_500_000_000,
+                totalBytes: 2_000_000_000,
+                outPagesPerSecond: 0,
+                usageStatus: .available,
+                activityStatus: .available
+            ), false),
+            ("writing", SwapMetrics(
+                usedBytes: 1_500_000_000,
+                totalBytes: 2_000_000_000,
+                outPagesPerSecond: 12,
+                usageStatus: .available,
+                activityStatus: .available
+            ), true)
+        ]
+        for (name, swap, expectedWriting) in cases {
+            let payload = try structured(object(handler(for: simulatedSnapshot(swap: swap)).handle(
+                line: toolCall(id: 11_000, name: "get_system_resources")
+            )!))
+            try check(integer(payload["swap_used_bytes"]) == 1_500_000_000, "\(name) swap usage")
+            try check(integer(payload["swap_total_bytes"]) == 2_000_000_000, "\(name) swap total")
+            try check(payload["swap_usage_state"] as? String == "available", "\(name) usage status")
+            try check(payload["swap_writing_now"] as? Bool == expectedWriting, "\(name) activity flag")
+            try check(payload["swap_activity_state"] as? String == "available", "\(name) activity status")
+        }
+
+        let warming = SwapMetrics(
+            usedBytes: 1_500_000_000,
+            totalBytes: 2_000_000_000,
+            outPagesPerSecond: nil,
+            usageStatus: .available,
+            activityStatus: .warmingUp
+        )
+        let warmingPayload = try structured(object(handler(for: simulatedSnapshot(swap: warming)).handle(
+            line: toolCall(id: 11_001, name: "get_system_resources")
+        )!))
+        try check(integer(warmingPayload["swap_used_bytes"]) == 1_500_000_000, "first sample retains known swap usage")
+        try check(isNull(warmingPayload["swap_writing_now"]), "first sample does not claim idle")
+        try check(isNull(warmingPayload["swap_out_pages_per_second"]), "first sample has no rate")
+
+        let failed = SwapMetrics(
+            usedBytes: 1_500_000_000,
+            totalBytes: 2_000_000_000,
+            outPagesPerSecond: 12,
+            usageStatus: .failed,
+            activityStatus: .failed
+        )
+        let failedPayload = try structured(object(handler(for: simulatedSnapshot(swap: failed)).handle(
+            line: toolCall(id: 11_002, name: "get_system_resources")
+        )!))
+        try check(isNull(failedPayload["swap_used_bytes"]), "failed swap usage hides stale value")
+        try check(isNull(failedPayload["swap_out_pages_per_second"]), "failed swap activity hides stale rate")
+        try check(isNull(failedPayload["swap_writing_now"]), "failed swap activity has unknown flag")
+        try check(failedPayload["swap_usage_state"] as? String == "failed", "swap failure is explicit")
+        try check(decimal(failedPayload["memory_usage_percent"]) == 75, "swap failure does not hide RAM")
     }
 
     private mutating func processDetailScenarios() throws {

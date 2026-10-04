@@ -9,6 +9,50 @@ public enum MetricStatus: String, Sendable, Equatable {
     case failed
 }
 
+public struct SwapMetrics: Sendable {
+    public let usedBytes: UInt64?
+    public let totalBytes: UInt64?
+    public let outPagesPerSecond: Double?
+    public let usageStatus: MetricStatus
+    public let activityStatus: MetricStatus
+
+    public init(
+        usedBytes: UInt64?,
+        totalBytes: UInt64?,
+        outPagesPerSecond: Double?,
+        usageStatus: MetricStatus,
+        activityStatus: MetricStatus
+    ) {
+        self.usedBytes = usedBytes
+        self.totalBytes = totalBytes
+        self.outPagesPerSecond = outPagesPerSecond
+        self.usageStatus = usageStatus
+        self.activityStatus = activityStatus
+    }
+
+    public var isWriting: Bool? {
+        guard activityStatus == .available, let outPagesPerSecond else { return nil }
+        return outPagesPerSecond > 0
+    }
+
+    public static func pagesPerSecond(
+        previous: UInt64,
+        current: UInt64,
+        elapsedSeconds: TimeInterval
+    ) -> Double? {
+        guard current >= previous, elapsedSeconds > 0 else { return nil }
+        return Double(current - previous) / elapsedSeconds
+    }
+
+    public static let unavailable = SwapMetrics(
+        usedBytes: nil,
+        totalBytes: nil,
+        outPagesPerSecond: nil,
+        usageStatus: .unavailable,
+        activityStatus: .unavailable
+    )
+}
+
 public struct ProcessUsage: Identifiable, Sendable {
     public let pid: Int32
     public let name: String
@@ -37,6 +81,7 @@ public struct ResourceSnapshot: Sendable {
     public let cpuUsage: Double?
     public let memoryUsed: UInt64
     public let memoryTotal: UInt64
+    public let swap: SwapMetrics
     public let diskUsed: UInt64
     public let diskTotal: UInt64
     public let gpuUsage: Double?
@@ -57,6 +102,7 @@ public struct ResourceSnapshot: Sendable {
         cpuUsage: Double?,
         memoryUsed: UInt64,
         memoryTotal: UInt64,
+        swap: SwapMetrics = .unavailable,
         diskUsed: UInt64,
         diskTotal: UInt64,
         gpuUsage: Double?,
@@ -76,6 +122,7 @@ public struct ResourceSnapshot: Sendable {
         self.cpuUsage = cpuUsage
         self.memoryUsed = memoryUsed
         self.memoryTotal = memoryTotal
+        self.swap = swap
         self.diskUsed = diskUsed
         self.diskTotal = diskTotal
         self.gpuUsage = gpuUsage
@@ -108,6 +155,7 @@ public final class MetricsReader: @unchecked Sendable {
     private let queue = DispatchQueue(label: "local.macresourcemonitor.metrics", qos: .utility)
     private var previousCPU: [UInt64]?
     private var previousNetwork: (received: UInt64, sent: UInt64, date: Date)?
+    private var previousSwapOuts: (pages: UInt64, uptime: TimeInterval)?
 
     public init() {}
 
@@ -127,6 +175,7 @@ public final class MetricsReader: @unchecked Sendable {
         queue.sync {
             previousCPU = nil
             previousNetwork = nil
+            previousSwapOuts = nil
         }
     }
 
@@ -134,6 +183,7 @@ public final class MetricsReader: @unchecked Sendable {
         let startedAt = Date()
         let cpu = readCPU()
         let memory = readMemory()
+        let swap = readSwap(memorySwapOuts: memory.swapOuts)
         let disk = readDisk()
         let gpu = readGPU()
         let network = readNetwork()
@@ -143,6 +193,7 @@ public final class MetricsReader: @unchecked Sendable {
             cpuUsage: cpu.value,
             memoryUsed: memory.used,
             memoryTotal: memory.total,
+            swap: swap,
             diskUsed: disk.used,
             diskTotal: disk.total,
             gpuUsage: gpu.usage,
@@ -196,7 +247,7 @@ public final class MetricsReader: @unchecked Sendable {
         return (min(max(1 - Double(deltaIdle) / Double(deltaTotal), 0), 1), .available)
     }
 
-    private func readMemory() -> (used: UInt64, total: UInt64, status: MetricStatus) {
+    private func readMemory() -> (used: UInt64, total: UInt64, status: MetricStatus, swapOuts: UInt64?) {
         var stats = vm_statistics64()
         var count = mach_msg_type_number_t(
             MemoryLayout<vm_statistics64_data_t>.stride / MemoryLayout<integer_t>.stride
@@ -207,14 +258,57 @@ public final class MetricsReader: @unchecked Sendable {
             }
         }
         let total = ProcessInfo.processInfo.physicalMemory
-        guard result == KERN_SUCCESS, total > 0 else { return (0, total, .failed) }
+        guard result == KERN_SUCCESS, total > 0 else { return (0, total, .failed, nil) }
 
-        let pageSize = UInt64(sysconf(_SC_PAGESIZE))
+        let rawPageSize = sysconf(_SC_PAGESIZE)
+        guard rawPageSize > 0 else { return (0, total, .failed, UInt64(stats.swapouts)) }
+        let pageSize = UInt64(rawPageSize)
         let usedPages = UInt64(stats.active_count)
             + UInt64(stats.inactive_count)
             + UInt64(stats.wire_count)
             + UInt64(stats.compressor_page_count)
-        return (min(usedPages * pageSize, total), total, .available)
+        return (min(usedPages * pageSize, total), total, .available, UInt64(stats.swapouts))
+    }
+
+    private func readSwap(memorySwapOuts: UInt64?) -> SwapMetrics {
+        var usage = xsw_usage()
+        var size = MemoryLayout<xsw_usage>.size
+        let usageResult = withUnsafeMutablePointer(to: &usage) {
+            sysctlbyname("vm.swapusage", $0, &size, nil, 0)
+        }
+        let usageStatus: MetricStatus = usageResult == 0 && size == MemoryLayout<xsw_usage>.size
+            ? .available : .unavailable
+
+        let uptime = ProcessInfo.processInfo.systemUptime
+        let rate: Double?
+        let activityStatus: MetricStatus
+        if let memorySwapOuts {
+            if let previousSwapOuts,
+               let measured = SwapMetrics.pagesPerSecond(
+                   previous: previousSwapOuts.pages,
+                   current: memorySwapOuts,
+                   elapsedSeconds: uptime - previousSwapOuts.uptime
+               ) {
+                rate = measured
+                activityStatus = .available
+            } else {
+                rate = nil
+                activityStatus = .warmingUp
+            }
+            previousSwapOuts = (memorySwapOuts, uptime)
+        } else {
+            previousSwapOuts = nil
+            rate = nil
+            activityStatus = .failed
+        }
+
+        return SwapMetrics(
+            usedBytes: usageStatus == .available ? usage.xsu_used : nil,
+            totalBytes: usageStatus == .available ? usage.xsu_total : nil,
+            outPagesPerSecond: rate,
+            usageStatus: usageStatus,
+            activityStatus: activityStatus
+        )
     }
 
     private func readDisk() -> (used: UInt64, total: UInt64, status: MetricStatus) {

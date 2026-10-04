@@ -46,7 +46,7 @@ struct MonitorView: View {
         // menu-bar popover anchor when details are opened.
         .frame(
             width: popoverWidth,
-            height: showingDetails ? 620 : 320,
+            height: showingDetails ? 620 : 340,
             alignment: .topLeading
         )
         .transaction { transaction in
@@ -95,6 +95,7 @@ struct MonitorView: View {
                 detail: "uso total",
                 progress: snapshot.cpuUsage,
                 status: snapshot.cpuStatus,
+                swap: nil,
                 color: .blue,
                 warningThreshold: 0.9
             )
@@ -106,6 +107,7 @@ struct MonitorView: View {
                     : statusText(snapshot.memoryStatus),
                 progress: snapshot.memoryStatus == .available ? snapshot.memoryUsage : nil,
                 status: snapshot.memoryStatus,
+                swap: snapshot.swap,
                 color: .purple,
                 warningThreshold: 0.9
             )
@@ -115,6 +117,7 @@ struct MonitorView: View {
                 detail: snapshot.gpuName ?? statusText(snapshot.gpuStatus),
                 progress: snapshot.gpuStatus == .available ? snapshot.gpuUsage : nil,
                 status: snapshot.gpuStatus,
+                swap: nil,
                 color: .orange,
                 warningThreshold: 0.9
             )
@@ -126,6 +129,7 @@ struct MonitorView: View {
                     : statusText(snapshot.diskStatus),
                 progress: snapshot.diskStatus == .available ? snapshot.diskUsage : nil,
                 status: snapshot.diskStatus,
+                swap: nil,
                 color: .green,
                 warningThreshold: 0.85
             )
@@ -255,6 +259,8 @@ private struct DetailsView: View {
                 )
             }
 
+            SwapDetailCard(swap: snapshot.swap)
+
             VStack(alignment: .leading, spacing: 10) {
                 ProcessListCard(
                     title: "Mais CPU",
@@ -311,6 +317,54 @@ private struct DetailsView: View {
     private func formatRate(_ bytesPerSecond: Double) -> String {
         guard bytesPerSecond > 0 else { return "0 B/s" }
         return ByteCountFormatter.string(fromByteCount: Int64(bytesPerSecond), countStyle: .binary) + "/s"
+    }
+}
+
+private struct SwapDetailCard: View {
+    let swap: SwapMetrics
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Label("Swap no SSD", systemImage: "internaldrive")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.purple)
+                Spacer()
+                Text(usedText)
+                    .font(.subheadline.monospacedDigit().weight(.semibold))
+            }
+
+            Text(activityText)
+                .font(.caption)
+                .foregroundStyle(swap.isWriting == true ? .orange : .secondary)
+
+            Text("Swap ocupado pode permanecer após a demanda passar. Escrita recente indica páginas enviadas ao SSD nesta amostra.")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 12))
+        .accessibilityIdentifier("monitor.swap.details")
+    }
+
+    private var usedText: String {
+        guard swap.usageStatus == .available, let usedBytes = swap.usedBytes else { return "N/D" }
+        return formatBytes(usedBytes)
+    }
+
+    private var activityText: String {
+        switch swap.activityStatus {
+        case .available:
+            guard let rate = swap.outPagesPerSecond, rate > 0 else {
+                return "Sem escrita de swap na última amostra"
+            }
+            return "Gravando swap · \(rate.formatted(.number.precision(.fractionLength(0)))) páginas/s"
+        case .warmingUp: return "Aguardando segunda amostra"
+        case .unavailable: return "Atividade indisponível"
+        case .failed: return "Falha ao ler a atividade"
+        }
     }
 }
 
@@ -417,6 +471,7 @@ private struct MetricCard: View {
     let detail: String
     let progress: Double?
     let status: MetricStatus
+    let swap: SwapMetrics?
     let color: Color
     let warningThreshold: Double
 
@@ -446,12 +501,20 @@ private struct MetricCard: View {
                 .foregroundStyle(.secondary)
                 .lineLimit(2)
                 .truncationMode(.middle)
+
+            if let swap {
+                Text(swapText(swap))
+                    .font(.caption2.weight(.medium))
+                    .foregroundStyle(swap.isWriting == true ? .orange : .secondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
         }
         .padding(12)
         .background(.quaternary.opacity(0.45), in: RoundedRectangle(cornerRadius: 12))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(title)
-        .accessibilityValue("\(value), \(detail), \(statusLabel)")
+        .accessibilityValue("\(value), \(detail), \(swap.map(swapText) ?? ""), \(statusLabel)")
         .accessibilityIdentifier("monitor.metric.\(title.lowercased())")
     }
 
@@ -472,6 +535,14 @@ private struct MetricCard: View {
         case .unavailable, .warmingUp: return .secondary
         case .available: return color
         }
+    }
+
+    private func swapText(_ swap: SwapMetrics) -> String {
+        guard swap.usageStatus == .available, let usedBytes = swap.usedBytes else {
+            return "Swap no SSD: N/D"
+        }
+        let suffix = swap.isWriting == true ? " · gravando" : ""
+        return "Swap no SSD: \(formatBytes(usedBytes))\(suffix)"
     }
 }
 
