@@ -187,7 +187,7 @@ utilização do acelerador.
 
 ## Smoke test e suíte de cenários
 
-O runner local executa uma matriz determinística de **2.022 cenários distintos**
+O runner local executa uma matriz determinística de **2.025 cenários distintos**
 sem depender de um processo real ou de dados pessoais. A matriz inclui estados
 simulados de baseline, indisponibilidade, falha de GPU, rede, disco e lista de
 processos:

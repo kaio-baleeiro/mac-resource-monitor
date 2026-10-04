@@ -1,6 +1,6 @@
 import Foundation
 import IOKit
-import Darwin
+@preconcurrency import Darwin
 
 public enum MetricStatus: String, Sendable, Equatable {
     case available

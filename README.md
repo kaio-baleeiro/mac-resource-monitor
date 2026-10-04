@@ -96,6 +96,10 @@ recursos e mostra velocidade de rede, quantidade de processos visíveis e os
 processos que mais consomem CPU e RAM. Cada linha de processo pode ser aberta
 para copiar o PID ou iniciar o Monitor de Atividade.
 
+Os valores de RAM usam a unidade de memória do macOS (binária): uma máquina
+com 16 GiB físicos aparece como 16 GB, enquanto o armazenamento mantém a
+formatação decimal de arquivos.
+
 O cartão de RAM também mostra o espaço de swap ocupado no SSD e destaca quando
 houve envio recente de páginas para o swap. Em **Detalhes**, os dois sinais
 aparecem separadamente. Swap ocupado pode persistir após o pico de demanda;
@@ -175,6 +179,6 @@ Os cenários automatizados podem ser executados com:
 ./scripts/test-mcp.sh
 ```
 
-O runner valida 2.022 cenários distintos de protocolo, schemas, argumentos,
+O runner valida 2.025 cenários distintos de protocolo, schemas, argumentos,
 leituras de recursos, consultas de processos, swap e degradação simulada para
 permissões ou métricas indisponíveis.

@@ -103,7 +103,7 @@ struct MonitorView: View {
                 title: "RAM",
                 value: percent(snapshot.memoryUsage, status: snapshot.memoryStatus),
                 detail: snapshot.memoryStatus == .available
-                    ? "uso estimado · \(formatBytes(snapshot.memoryUsed)) de \(formatBytes(snapshot.memoryTotal))"
+                    ? "uso estimado · \(ResourceFormatting.memoryBytes(snapshot.memoryUsed)) de \(ResourceFormatting.memoryBytes(snapshot.memoryTotal))"
                     : statusText(snapshot.memoryStatus),
                 progress: snapshot.memoryStatus == .available ? snapshot.memoryUsage : nil,
                 status: snapshot.memoryStatus,
@@ -125,7 +125,7 @@ struct MonitorView: View {
                 title: "Armazenamento",
                 value: percent(snapshot.diskUsage, status: snapshot.diskStatus),
                 detail: snapshot.diskStatus == .available
-                    ? "ocupado · \(formatBytes(snapshot.diskUsed)) de \(formatBytes(snapshot.diskTotal))"
+                    ? "ocupado · \(ResourceFormatting.storageBytes(snapshot.diskUsed)) de \(ResourceFormatting.storageBytes(snapshot.diskTotal))"
                     : statusText(snapshot.diskStatus),
                 progress: snapshot.diskStatus == .available ? snapshot.diskUsage : nil,
                 status: snapshot.diskStatus,
@@ -214,10 +214,6 @@ struct MonitorView: View {
         case .failed: return "Falha na leitura"
         }
     }
-
-    private func formatBytes(_ bytes: UInt64) -> String {
-        ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file)
-    }
 }
 
 private struct SummaryMetric: View {
@@ -275,7 +271,7 @@ private struct DetailsView: View {
                     title: "Mais RAM",
                     icon: "memorychip",
                     processes: topMemory,
-                    value: { formatBytes($0.memoryBytes) },
+                    value: { ResourceFormatting.memoryBytes($0.memoryBytes) },
                     detail: { "PID \($0.pid)" },
                     color: .purple,
                     onSelect: { selectedProcess = $0 }
@@ -351,7 +347,7 @@ private struct SwapDetailCard: View {
 
     private var usedText: String {
         guard swap.usageStatus == .available, let usedBytes = swap.usedBytes else { return "N/D" }
-        return formatBytes(usedBytes)
+        return ResourceFormatting.memoryBytes(usedBytes)
     }
 
     private var activityText: String {
@@ -542,7 +538,7 @@ private struct MetricCard: View {
             return "Swap no SSD: N/D"
         }
         let suffix = swap.isWriting == true ? " · gravando" : ""
-        return "Swap no SSD: \(formatBytes(usedBytes))\(suffix)"
+        return "Swap no SSD: \(ResourceFormatting.memoryBytes(usedBytes))\(suffix)"
     }
 }
 
@@ -557,7 +553,7 @@ private struct ProcessDetailView: View {
 
             LabeledContent("PID", value: "\(process.pid)")
             LabeledContent("CPU", value: formatPercent(process.cpuUsage, fractionDigits: 1))
-            LabeledContent("Memória", value: formatBytes(process.memoryBytes))
+            LabeledContent("Memória", value: ResourceFormatting.memoryBytes(process.memoryBytes))
 
             Divider()
 
@@ -584,8 +580,4 @@ private func formatPercent(_ value: Double, fractionDigits: Int) -> String {
     formatter.maximumFractionDigits = fractionDigits
     formatter.minimumFractionDigits = fractionDigits
     return formatter.string(from: NSNumber(value: value / 100)) ?? "N/D"
-}
-
-private func formatBytes(_ bytes: UInt64) -> String {
-    ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file)
 }

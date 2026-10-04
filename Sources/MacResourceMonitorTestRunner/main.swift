@@ -159,6 +159,7 @@ struct MacResourceMonitorTestRunner {
         try systemResourceScenarios()
         try simulatedPermissionScenarios()
         try swapScenarios()
+        try formattingScenarios()
         try processDetailScenarios()
         try validationScenarios()
         try catalogScenarios()
@@ -343,6 +344,13 @@ struct MacResourceMonitorTestRunner {
         try check(isNull(failedPayload["swap_writing_now"]), "failed swap activity has unknown flag")
         try check(failedPayload["swap_usage_state"] as? String == "failed", "swap failure is explicit")
         try check(decimal(failedPayload["memory_usage_percent"]) == 75, "swap failure does not hide RAM")
+    }
+
+    private mutating func formattingScenarios() throws {
+        let installedBytes: UInt64 = 17_179_869_184 // 16 GiB
+        try check(ResourceFormatting.memoryBytes(installedBytes).hasPrefix("16"), "16 GiB RAM is displayed as 16 GB")
+        try check(ResourceFormatting.storageBytes(installedBytes).hasPrefix("17"), "storage retains decimal file units")
+        try check(ResourceFormatting.memoryBytes(installedBytes / 2).hasPrefix("8"), "memory uses binary units across sizes")
     }
 
     private mutating func processDetailScenarios() throws {
